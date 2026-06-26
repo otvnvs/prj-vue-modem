@@ -1,109 +1,116 @@
-// utils/sender.js
-
 export class AudioSender {
-  constructor() {
-    this.audioContext = null;
-    this.gainNode = null;
-    this.oscillator = null;
-    this.isRunning = false;
-  }
-
-  init(sharedContext) {
-    // Shared execution graph logic loops prevent memory leaks across contexts
-    this.audioContext = sharedContext || new (window.AudioContext || window.webkitAudioContext)();
-    this.gainNode = this.audioContext.createGain();
-    this.gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
-    this.gainNode.connect(this.audioContext.destination);
-  }
-
-  // Encodes incoming textual strings directly into raw, time-quantized continuous sound vectors
-  
-  
- // Locate inside utils/sender.js -> transmitString Method
-
-transmitString(text, protocolInstance) {
-  if (!this.audioContext) this.init();
-  
-  if (this.audioContext.state === 'suspended') {
-    this.audioContext.resume();
-  }
-
-  const encoder = new TextEncoder();
-  const bitStream = [];
-  const dataBytes = encoder.encode(text);
-
-  for (let byte of dataBytes) {
-    // 1. INJECT START BIT: Always a logical 0 to pull the channel low
-    bitStream.push(0);
-
-    // 2. INJECT 8 DATA BITS: Read from Least Significant Bit (LSB) first for standard UART format
-    for (let bitPosition = 0; bitPosition < 8; bitPosition++) {
-      bitStream.push((byte >> bitPosition) & 1);
+    constructor() {
+        this.audioContext = null;
+        this.gainNode = null;
+        this.oscillator = null;
+        this.isRunning = false;
     }
 
-    // 3. INJECT STOP BIT: Always a logical 1 to park the line high until the next symbol
-    bitStream.push(1);
-  }
+    init(sharedContext) {
+        this.audioContext = sharedContext || new (window.AudioContext || window.webkitAudioContext)();
+        this.gainNode = this.audioContext.createGain();
+        this.gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
+        this.gainNode.connect(this.audioContext.destination);
+    }
 
-  // Pass our new padded frame bitstream into the continuous audio scheduling timeline
-  this.playToneSequence(bitStream, protocolInstance);
+    // --- NEW: GENERATE INTERNAL SAMPLES FOR TESTING ---
+    generateLoopbackSamples(text, protocolInstance, sampleRate = 44100) {
+        const encoder = new TextEncoder();
+        const bitStream = [];
+        const dataBytes = encoder.encode(text);
+
+        // Standard UART Frame Assembly
+        for (let byte of dataBytes) {
+            bitStream.push(0); // Start Bit
+            for (let bitPosition = 0; bitPosition < 8; bitPosition++) {
+                bitStream.push((byte >> bitPosition) & 1);
+            }
+            bitStream.push(1); // Stop Bit
+        }
+
+        const baudRate = protocolInstance.config.baud;
+        const samplesPerBit = Math.floor(sampleRate / baudRate);
+        const totalSamples = bitStream.length * samplesPerBit;
+        const outBuffer = new Float32Array(totalSamples);
+
+        let phase = 0;
+        let sampleIdx = 0;
+
+        for (let bit of bitStream) {
+            const frequency = protocolInstance.getFrequencyForBit(bit);
+            
+            // Generate standard continuous-phase sine wave samples for this bit interval
+            for (let i = 0; i < samplesPerBit; i++) {
+                outBuffer[sampleIdx] = 0.15 * Math.sin(phase);
+                phase += (2 * Math.PI * frequency) / sampleRate;
+                
+                // Keep phase bounded to prevent floating point accuracy loss over long strings
+                if (phase > 2 * Math.PI) {
+                    phase -= 2 * Math.PI;
+                }
+                sampleIdx++;
+            }
+        }
+        return outBuffer;
+    }
+
+    // Physical Hardware Transmission (Unchanged)
+    transmitString(text, protocolInstance) {
+        if (!this.audioContext) this.init();
+        if (this.audioContext.state === 'suspended') {
+            this.audioContext.resume();
+        }
+
+        const encoder = new TextEncoder();
+        const bitStream = [];
+        const dataBytes = encoder.encode(text);
+
+        for (let byte of dataBytes) {
+            bitStream.push(0);
+            for (let bitPosition = 0; bitPosition < 8; bitPosition++) {
+                bitStream.push((byte >> bitPosition) & 1);
+            }
+            bitStream.push(1);
+        }
+        this.playToneSequence(bitStream, protocolInstance);
+    }
+
+    playToneSequence(bitStream, protocolInstance) {
+        const startTime = this.audioContext.currentTime + 0.05;
+        const baudRate = protocolInstance.config.baud;
+        const bitDuration = 1 / baudRate;
+
+        this.stopTone();
+        this.oscillator = this.audioContext.createOscillator();
+        this.oscillator.type = 'sine';
+        this.oscillator.connect(this.gainNode);
+        
+        this.gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
+        this.gainNode.gain.linearRampToValueAtTime(0.15, startTime);
+
+        let runningTimeline = startTime;
+        for (let bitIndex = 0; bitIndex < bitStream.length; bitIndex++) {
+            const activeBit = bitStream[bitIndex];
+            const targetedFrequency = protocolInstance.getFrequencyForBit(activeBit);
+            this.oscillator.frequency.setValueAtTime(targetedFrequency, runningTimeline);
+            runningTimeline += bitDuration;
+        }
+
+        this.gainNode.gain.setValueAtTime(0.15, runningTimeline);
+        this.gainNode.gain.linearRampToValueAtTime(0, runningTimeline + 0.01);
+
+        this.oscillator.start(startTime);
+        this.oscillator.stop(runningTimeline + 0.02);
+        this.isRunning = true;
+        this.oscillator.onended = () => { this.isRunning = false; };
+    }
+
+    stopTone() {
+        if (this.oscillator) {
+            try { this.oscillator.stop(); this.oscillator.disconnect(); } catch (e) {}
+            this.oscillator = null;
+        }
+        this.isRunning = false;
+    }
 }
 
-  
-  
-  
-
-  playToneSequence(bitStream, protocolInstance) {
-    const startTime = this.audioContext.currentTime + 0.05; // 50ms scheduling pad
-    const baudRate = protocolInstance.config.baud;
-    const bitDuration = 1 / baudRate;
-
-    // Tear down any existing oscillator infrastructure gracefully to prevent collision audio leaks
-    this.stopTone();
-
-    this.oscillator = this.audioContext.createOscillator();
-    this.oscillator.type = 'sine';
-    this.oscillator.connect(this.gainNode);
-
-    // Fade up system volume smoothly to avoid initial phase clicks
-    this.gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
-    this.gainNode.gain.linearRampToValueAtTime(0.15, startTime); // Keep audio levels comfortable (15%)
-
-    let runningTimeline = startTime;
-
-    for (let bitIndex = 0; bitIndex < bitStream.length; bitIndex++) {
-      const activeBit = bitStream[bitIndex];
-      // Delegate specific target pitches (e.g. AFSK frequencies) directly to the isolated schema mapper
-      const targetedFrequency = protocolInstance.getFrequencyForBit(activeBit);
-      
-      // Schedule the frequency transition exactly at the boundary of the symbol duration
-      this.oscillator.frequency.setValueAtTime(targetedFrequency, runningTimeline);
-      runningTimeline += bitDuration;
-    }
-
-    // Gracefully fade volume level back down to zero once transmission ends
-    this.gainNode.gain.setValueAtTime(0.15, runningTimeline);
-    this.gainNode.gain.linearRampToValueAtTime(0, runningTimeline + 0.01);
-    
-    this.oscillator.start(startTime);
-    this.oscillator.stop(runningTimeline + 0.02);
-    this.isRunning = true;
-
-    this.oscillator.onended = () => {
-      this.isRunning = false;
-    };
-  }
-
-  stopTone() {
-    if (this.oscillator) {
-      try {
-        this.oscillator.stop();
-        this.oscillator.disconnect();
-      } catch (e) {
-        // Handle cases where the oscillator was already halted
-      }
-      this.oscillator = null;
-    }
-    this.isRunning = false;
-  }
-}
