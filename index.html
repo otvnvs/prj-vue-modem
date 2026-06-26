@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!-- CRITICAL: Tells the browser how to control scaling on mobile screens -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Responsive Mobile Template</title>
+    <link rel="icon" href="data:,">
+</head>
+<body>
+	<div id="app"></div>
+	<script type="importmap">
+	{
+	  "imports": {
+	    "vue": "./src/lib/vue/vue.esm-browser.prod.js"
+	  }
+	}
+	</script>
+
+	
+	
+
+	
+	
+	
+			<script type="module" src="./src/main.sfc.js"></script>
+<!-- Place this right under <head> in your index.html -->
+<script>
+  (function() {
+    // 1. Create a container element for our custom console box
+    var box = document.createElement('div');
+    box.style.position = 'fixed';
+    box.style.bottom = '0';
+    box.style.left = '0';
+    box.style.width = '100%';
+    box.style.height = '140px';
+    box.style.backgroundColor = 'rgba(0, 0, 0, 0.95)';
+    box.style.color = '#ff1744'; // Bright red text for visibility
+    box.style.fontFamily = 'monospace';
+    box.style.fontSize = '11px';
+    box.style.padding = '8px';
+    box.style.overflowY = 'scroll';
+    box.style.zIndex = '999999';
+    box.style.borderTop = '2px solid #333';
+    box.style.boxSizing = 'border-box';
+    
+    // Add a clear button to purge old logs easily
+    var clearBtn = document.createElement('button');
+    clearBtn.textContent = 'CLEAR LOGS';
+    clearBtn.style.position = 'fixed';
+    clearBtn.style.bottom = '145px';
+    clearBtn.style.right = '10px';
+    clearBtn.style.zIndex = '999999';
+    clearBtn.style.backgroundColor = '#222';
+    clearBtn.style.color = '#fff';
+    clearBtn.style.border = '1px solid #555';
+    clearBtn.style.padding = '4px 8px';
+    clearBtn.style.fontSize = '10px';
+    clearBtn.onclick = function() { box.innerHTML = '<div>Console cleared...</div>'; };
+
+    // Wait for DOM to exist before appending to document
+    document.addEventListener('DOMContentLoaded', function() {
+      document.body.appendChild(box);
+      document.body.appendChild(clearBtn);
+    });
+
+    // Helper: Appends text messages down into our view panel
+    function logToScreen(msg, isColor) {
+      var line = document.createElement('div');
+      line.style.marginBottom = '4px';
+      line.style.wordBreak = 'break-all';
+      line.style.borderBottom = '1px solid #111';
+      line.style.paddingBottom = '2px';
+      if (isColor) line.style.color = isColor;
+      line.textContent = '> ' + msg;
+      box.appendChild(line);
+      box.scrollTop = box.scrollHeight; // Auto-scroll to latest error log
+    }
+
+    // 2. Intercept standard global syntax errors (e.g. missing files, parsing faults)
+    window.onerror = function(message, source, lineno, colno, error) {
+      var cleanSource = source ? source.split('/').pop() : 'unknown file';
+      logToScreen('CRASH: ' + message + ' (' + cleanSource + ':' + lineno + ')', '#ff1744');
+      return false;
+    };
+
+    // 3. Intercept unhandled Async/Await promise rejections
+    window.addEventListener('unhandledrejection', function(event) {
+      logToScreen('PROMISE REJECTION: ' + (event.reason ? event.reason.message || event.reason : 'Unknown Reason'), '#ff9100');
+    });
+
+    // 4. Overwrite traditional browser console logging pipelines
+    var originalLog = console.log;
+    var originalError = console.error;
+    var originalWarn = console.warn;
+
+    console.log = function() {
+      var args = Array.prototype.slice.call(arguments);
+      logToScreen(args.join(' '), '#00e676'); // Green logs for standard info
+      originalLog.apply(console, arguments);
+    };
+
+    console.error = function() {
+      var args = Array.prototype.slice.call(arguments);
+      logToScreen(args.join(' '), '#ff1744'); // Red logs for critical errors
+      originalError.apply(console, arguments);
+    };
+
+    console.warn = function() {
+      var args = Array.prototype.slice.call(arguments);
+      logToScreen(args.join(' '), '#ffb300'); // Yellow logs for warnings
+      originalWarn.apply(console, arguments);
+    };
+    
+    logToScreen('Mobile Debugger Active. Awaiting compiler logs...', '#888');
+  })();
+</script>
+
+
+</body>
+</html>
+
