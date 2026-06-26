@@ -87,7 +87,12 @@ export class PSKProtocol {
   return {
     displayName: "PSK (Phase Shift Keying)",
     fields: [
-      { type: "select", key: "baud", label: "Baud Rate (Symbols/sec)", options: [{ v: 31.25, l: "31.25 (BPSK31)" }, { v: 62.5, l: "62.50" }] },
+      { type: "select", key: "baud", label: "Baud Rate (Symbols/sec)", options: [
+	      { v: 10.0, l: "10.0 (Custom 1)" },
+	      { v: 20.0, l: "20.0 (Custom 2)" },
+	      { v: 31.25, l: "31.25 (BPSK31)" },
+	      { v: 62.5, l: "62.50" }
+      ] },
       { type: "number", key: "carrierFreq", label: "Carrier Frequency", min: 500, max: 3000, step: 100, unit: "Hz" },
       // NEW: Dynamic UI binding to inject the squelch limiter slider automatically
       { type: "number", key: "squelchDb", label: "Noise Squelch Gate Floor", min: 0, max: 50, step: 1, unit: "dB" }

@@ -1,4 +1,4 @@
-<!-- src/main.vue or src/App.vue -->
+<!--src/main.vue or src/App.vue-->
 <template>
   <div class="app-container">
     <header class="app-header">
@@ -11,80 +11,66 @@
     </header>
 
     <main class="grid-layout">
-      <!-- Left Column: Controls & Dynamic Configuration Panels -->
+      <!-- Controls Column -->
       <div class="control-sidebar">
-        
-        <!-- Section: Modem Hardware Engine Controls -->
+        <!-- Modem Engine Panel -->
         <section class="card control-panel">
           <h2>Modem Control</h2>
           <div class="control-row">
             <button 
-              :class="['power-btn', isEngineActive ? 'active-stop' : 'active-start']"
+              :class="['power-btn', isEngineActive ? 'active-stop' : 'active-start']" 
               @click="handleToggleEngine"
             >
-              {{ isEngineActive ? 'STOP MODEM ENGINE' : 'START MODEM ENGINE' }}
+              {{ isEngineActive ? 'STOP ENGINE' : 'START ENGINE' }}
             </button>
             <div class="status-badge" :data-status="engineState">
               STATUS: {{ engineState }}
             </div>
           </div>
-
+          
           <div class="telemetry-readout">
             <div class="data-field">
               <span class="label">Lock Frequency:</span>
-              <span class="value">{{ debugMetrics.lockFreq }} Hz</span>
+              <span class="value">{{ debugMetrics.lockFreq }}Hz</span>
             </div>
             <div class="data-field">
               <span class="label">Signal Quality:</span>
-              <span class="value">{{ debugMetrics.snr }} dB</span>
+              <span class="value">{{ debugMetrics.snr }}dB</span>
             </div>
           </div>
         </section>
 
-        <!-- Section: Protocol Selection & Parameters -->
+        <!-- Profile Panel -->
         <section class="card protocol-selection-panel">
           <h2>Protocol Profile</h2>
           <div class="input-group select-group">
             <label>Selected Architecture</label>
-      <select v-model="selectedProtocol" @change="handleProtocolChange" :disabled="senderInstance?.isRunning">
-    <!-- Automated loop builds select box items from metadata -->
-    <option v-for="proto in availableProtocols" :key="proto.id" :value="proto.id">
-      {{ proto.displayName }}
-    </option>
-  </select>
+            <div class="select-wrapper">
+              <select 
+                v-model="selectedProtocol" 
+                @change="handleProtocolChange" 
+                :disabled="senderInstance?.isRunning"
+              >
+                <option v-for="proto in availableProtocols" :key="proto.id" :value="proto.id">
+                  {{ proto.displayName }}
+                </option>
+              </select>
+            </div>
           </div>
-          
-  <!-- Dynamic Injection Form Configuration View -->
-<ProtocolConfig 
-  :fields="activeFields" 
-  v-model="protocolConfigs[selectedProtocol]" 
-/>
+          <ProtocolConfig :fields="activeFields" v-model="protocolConfigs[selectedProtocol]" />
         </section>
-        
       </div>
 
-      <!-- Right Column: Visualizer Monitors & Alphanumeric Message Logs -->
+      <!-- Displays Column -->
       <div class="display-workspace">
-        
-        <!-- Audio Oscilloscope Viewport Component -->
         <section class="card graphics-panel">
           <AudioOscilloscope :analyserNode="sharedAnalyser" />
         </section>
 
-        <!-- Twin Text Transmission and Logging Terminal Arrays -->
         <div class="terminal-grid">
-          <TerminalBox 
-            title="Transmit Terminal Buffer" 
-            mode="tx" 
-            @send="handleOutputTransmission" 
-          />
-          <TerminalBox 
-            title="Incoming Message Stream" 
-            mode="rx" 
-            :streamData="rxStreamBuffer" 
-          />
+          <TerminalBox title="Transmit Terminal Buffer" mode="tx" @send="handleOutputTransmission" />
+          <TerminalBox title="Incoming Message Stream" mode="rx" :streamData="rxStreamBuffer" />
         </div>
-        
       </div>
     </main>
   </div>
@@ -92,36 +78,25 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
-
-// Import core logic modules
 import { AudioReceiver } from './utils/receiver.js';
 import { AudioSender } from './utils/sender.js';
 import { ModemOrchestrator } from './utils/modem/index.js';
-
-// Import graphical components
 import AudioOscilloscope from './components/AudioOscilloscope.vue';
 import ProtocolConfig from './components/ProtocolConfig.vue';
 import TerminalBox from './components/TerminalBox.vue';
 
-// --- REACTIVE STATE DECK ---
 const isEngineActive = ref(false);
 const sharedAnalyser = ref(null);
 const rxStreamBuffer = ref('');
 const debugMetrics = ref({ mode: 'OFFLINE', lockFreq: 0, snr: 0 });
-
-// Dynamic Discovery Lists & Settings Cache Mapping
 const availableProtocols = ref([]);
 const selectedProtocol = ref('');
 const protocolConfigs = ref({});
 
-// --- ENGINE SYSTEM CORE INSTANCES ---
 const orchestrator = new ModemOrchestrator();
 const receiverInstance = new AudioReceiver();
 const senderInstance = new AudioSender();
 
-// --- COMPUTED ARCHITECTURE ENGINE ---
-
-// Automatically returns the exact fields requested by the active protocol manifest
 const activeFields = computed(() => {
   const current = availableProtocols.value.find(p => p.id === selectedProtocol.value);
   return current ? current.fields : [];
@@ -132,55 +107,34 @@ const engineState = computed(() => {
   return debugMetrics.value.mode;
 });
 
-// --- CORE LIFE CYCLE HOOKS ---
-
 onMounted(() => {
-  // 1. Register operational sub-modules with the orchestration engine
-  //orchestrator.registerProtocol('afsk', AFSKProtocol);
-  //orchestrator.registerProtocol('psk', PSKProtocol);
-
-  // 2. Discover available protocols dynamically to avoid manual UI building
   availableProtocols.value = orchestrator.getAvailableProtocols();
-  
-  // 3. Extract default config schemas out of our discovered manifest registry
   if (availableProtocols.value.length > 0) {
     selectedProtocol.value = availableProtocols.value[0].id;
-    
     availableProtocols.value.forEach(proto => {
       protocolConfigs.value[proto.id] = proto.defaultConfig;
     });
-    
-    // Set fallback instance
     orchestrator.setProtocol(selectedProtocol.value, protocolConfigs.value[selectedProtocol.value]);
   }
 
-  // 4. Wire telemetry data updates back to the UI parameters
   orchestrator.onDebug((metrics) => {
     debugMetrics.value.lockFreq = metrics.freqLock;
     debugMetrics.value.snr = metrics.signalQuality;
-    
-    // Prevent background receiver routines from writing over a transmission mode state lock
     if (debugMetrics.value.mode !== 'TRANSMITTING') {
       debugMetrics.value.mode = metrics.mode;
     }
   });
 
-  // 5. Direct incoming parsed characters straight into terminal logs
   orchestrator.onData((character) => {
     rxStreamBuffer.value += character;
   });
 });
 
-// --- DYNAMIC PARAMETERS SYNC DECK ---
-
-// Deep watch options allow hot-swapping form parameter mutations live inside classes
 watch(() => protocolConfigs.value[selectedProtocol.value], (newSettings) => {
   if (newSettings) {
     orchestrator.updateConfig(newSettings);
   }
 }, { deep: true });
-
-// --- INTERACTIVE ACTION DISPATCHERS ---
 
 const handleProtocolChange = () => {
   if (selectedProtocol.value) {
@@ -191,19 +145,11 @@ const handleProtocolChange = () => {
 const handleToggleEngine = async () => {
   if (!isEngineActive.value) {
     try {
-      // Connect background hardware worklet sample delivery arrays right to the orchestrator layer
       const activeAnalyser = await receiverInstance.start((audioSamplesChunk) => {
-        orchestrator.ingestIncomingAudioSamples(
-          audioSamplesChunk, 
-          receiverInstance.audioContext.sampleRate
-        );
+        orchestrator.ingestIncomingAudioSamples(audioSamplesChunk, receiverInstance.audioContext.sampleRate);
       });
-      
       sharedAnalyser.value = activeAnalyser;
-      
-      // Share exact hardware audio context timelines down to eliminate phase pops
       senderInstance.init(receiverInstance.audioContext);
-      
       isEngineActive.value = true;
       debugMetrics.value.mode = 'LISTENING / IDLE';
     } catch (err) {
@@ -211,163 +157,164 @@ const handleToggleEngine = async () => {
       alert("Microphone hardware connection blocked. Check browser peripheral permissions.");
     }
   } else {
-    // Clean up operational pipelines to free system memory
     receiverInstance.stop();
     senderInstance.stopTone();
     sharedAnalyser.value = null;
     isEngineActive.value = false;
-    rxStreamBuffer.value = ''; // Flush history terminals
+    rxStreamBuffer.value = '';
     debugMetrics.value = { mode: 'OFFLINE', lockFreq: 0, snr: 0 };
   }
 };
-
-// Locate inside main.vue -> handleOutputTransmission Method
 
 const handleOutputTransmission = (messageText) => {
   if (!isEngineActive.value) {
     alert("Please launch the modem hardware engine before initiating audio transmission.");
     return;
   }
-  
   debugMetrics.value.mode = 'TRANSMITTING';
   senderInstance.transmitString(messageText, orchestrator.activeProtocol);
-  
-  // UPDATED: Account for 10 bits per character frame (1 start + 8 data + 1 stop)
+
   const totalFramedBits = messageText.length * 10;
   const transmissionDurationMs = (totalFramedBits / orchestrator.config.baud) * 1000;
-  
+
   setTimeout(() => {
     if (isEngineActive.value) {
       debugMetrics.value.mode = 'LISTENING / IDLE';
     }
-  }, transmissionDurationMs + 150); // Settlement padding
+  }, transmissionDurationMs + 150);
 };
-
-
 </script>
-<style scoped>/* ==========================================================================
-   ACOUSTIC DATA MODEM DASHBOARD DESIGN SYSTEM
-   ========================================================================== */
 
-/* 1. Global Application Architecture & Resets */
-body {
-  background-color: #0f172a;
-  color: #e2e8f0;
+<style scoped>
+:global(body) {
+  background-color: #090d16;
+  color: #f1f5f9;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   margin: 0;
-  padding: 24px;
+  padding: 12px;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
+/* Fluid Outer Container */
 .app-container {
-  max-width: 1280px;
+  max-width: 1400px;
   margin: 0 auto;
+  padding: 4px;
 }
 
+/* Header Adjustments */
 .app-header {
-  border-bottom: 2px solid #1e293b;
-  padding-bottom: 14px;
-  margin-bottom: 28px;
+  border-bottom: 1px solid #1e293b;
+  padding-bottom: 16px;
+  margin-bottom: 20px;
 }
 
 .header-content {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
 }
 
 .app-header h1 {
-  font-size: 1.4rem;
+  font-size: 1.25rem;
   margin: 0;
   color: #f8fafc;
   letter-spacing: -0.025em;
+  font-weight: 700;
 }
 
-/* 2. Live Engine Status Indicator Bubble */
 .engine-indicator {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: bold;
-  color: #64748b;
+  color: #94a3b8;
   background: #111827;
-  padding: 4px 10px;
-  border-radius: 20px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #1e293b;
+  display: inline-flex;
+  align-items: center;
 }
 
 .engine-indicator.running {
-  color: #10b981;
-  text-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+  color: #34d399;
+  border-color: #065f46;
+  background: #022c22;
+  box-shadow: 0 0 12px rgba(52, 211, 153, 0.15);
 }
 
-/* 3. High-Level Adaptive Grid Layouts */
+/* Mobile-First Layout Cascade */
 .grid-layout {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 24px;
+  gap: 16px;
 }
 
-@media (min-width: 768px) {
-  .grid-layout {
-    grid-template-columns: 360px 1fr;
-  }
-}
-
-.control-sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
+.control-sidebar, 
 .display-workspace {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 16px;
 }
 
-/* 4. Modular Panel Cards */
+.terminal-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+/* Cards & Content Elements */
 .card {
-  background: #1e293b;
-  padding: 20px;
-  border-radius: 8px;
-  border: 1px solid #334155;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  background: #0f172a;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid #1e293b;
 }
 
 .card h2 {
-  font-size: 0.95rem;
+  font-size: 0.8rem;
   margin-top: 0;
-  margin-bottom: 18px;
-  color: #94a3b8;
+  margin-bottom: 16px;
+  color: #64748b;
   text-transform: uppercase;
-  letter-spacing: 0.075em;
+  letter-spacing: 0.05em;
+  font-weight: 700;
 }
 
-/* 5. Interactive Elements & Control Rows */
+/* Layout Row Configuration */
 .control-row {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-bottom: 20px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
 }
 
+/* Dynamic Interactive Controls */
 .power-btn {
   border: none;
   padding: 14px;
   font-weight: bold;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 8px;
   font-family: inherit;
-  font-size: 0.9rem;
-  transition: all 0.2s ease;
+  font-size: 0.85rem;
+  transition: background 0.15s ease, transform 0.1s ease;
   letter-spacing: 0.025em;
+  width: 100%;
+}
+
+.power-btn:active {
+  transform: scale(0.98);
 }
 
 .active-start {
-  background: #10b981;
+  background: #3b82f6;
   color: #ffffff;
 }
 
 .active-start:hover {
-  background: #059669;
+  background: #2563eb;
 }
 
 .active-stop {
@@ -379,30 +326,32 @@ body {
   background: #dc2626;
 }
 
-/* 6. Live Hardware Telemetry Displays */
+/* Data Status Elements */
 .status-badge {
-  text-align: center;
-  background: #0f172a;
-  color: #f1f5f9;
-  padding: 10px;
-  border-radius: 4px;
-  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
   font-weight: bold;
-  border: 1px solid #1e293b;
+  border: 1px solid #334155;
 }
 
 .telemetry-readout {
-  background: #0f172a;
-  padding: 14px;
-  border-radius: 6px;
+  background: #090d16;
+  padding: 12px;
+  border-radius: 8px;
   border: 1px solid #1e293b;
 }
 
 .data-field {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 8px;
-  font-size: 0.85rem;
+  margin-bottom: 10px;
+  font-size: 0.8rem;
 }
 
 .data-field:last-child {
@@ -418,42 +367,33 @@ body {
   font-weight: bold;
 }
 
-/* 7. Configuration Inputs & Dropdowns */
+/* Form Selection & Inputs */
 .select-group {
   display: flex;
   flex-direction: column;
-  margin-bottom: 16px;
 }
 
 .select-group label {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   color: #64748b;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   text-transform: uppercase;
+  font-weight: bold;
 }
 
-.select-group select {
+.select-wrapper {
+  position: relative;
   width: 100%;
-  background: #0f172a;
+}
+
+.select-wrapper select {
+  width: 100%;
+  background: #1e293b;
   color: #f1f5f9;
   border: 1px solid #334155;
-  padding: 10px;
-  border-radius: 4px;
+  padding: 12px;
+  border-radius: 8px;
   font-family: inherit;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   outline: none;
-}
-
-/* 8. Text Terminals Workspace Layout */
-.terminal-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 24px;
-}
-
-@media (min-width: 960px) {
-  .terminal-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-</style>
+appearance: none;cursor: pointer;}.select-wrapper select:focus {border-color: #3b82f6;}/* Custom Dropdown Arrow */.select-wrapper::after {content: "▼";font-size: 0.65rem;color: #64748b;position: absolute;right: 14px;top: 50%;transform: translateY(-50%);pointer-events: none;}/* Responsive Viewports Optimization */@media (min-width: 480px) {:global(body) {padding: 16px;}.header-content {flex-direction: row;justify-content: space-between;align-items: center;}.control-row {grid-template-columns: 1fr 1fr;}}@media (min-width: 768px) {.grid-layout {grid-template-columns: 320px 1fr;gap: 20px;}.card {padding: 20px;}.app-header h1 {font-size: 1.35rem;}}@media (min-width: 1024px) {.grid-layout {grid-template-columns: 360px 1fr;gap: 24px;}.terminal-grid {grid-template-columns: 1fr 1fr;gap: 24px;}}</style>
