@@ -1,7 +1,6 @@
 // utils/modem/index.js
 
 // Simply import your custom protocol files here to execute their self-registration scripts
-import './afsk.js';
 import './psk.js';
 import './ask.js';
 import './fsk4.js';
