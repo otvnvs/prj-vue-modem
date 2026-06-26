@@ -152,8 +152,8 @@
 //version 3
 // * run console.log(JSON.stringify(window.__sfc_trace__, null, 0)); for trace
 //--------------------------------------------------------------------------------
-import { loadModule } from './lib/vue3-sfc-loader/vue3-sfc-loader.esm.js';
-import * as Vue from './lib/vue/vue.esm-browser.prod.js';
+import { loadModule } from '../lib/vue3-sfc-loader/vue3-sfc-loader.esm.js';
+import * as Vue from '../lib/vue/vue.esm-browser.prod.js';
 
 
 export async function bootstrapSfcApp() {
@@ -165,7 +165,7 @@ export async function bootstrapSfcApp() {
 
   logT('bi', 'Init stack');
 
-  const routerRes = await fetch('./src/lib/vue-router/vue-router.global.prod.js');
+  const routerRes = await fetch('./lib/vue-router/vue-router.global.prod.js');
   if (!routerRes.ok) throw new Error("Router failed");
   const routerCode = await routerRes.text();
 
