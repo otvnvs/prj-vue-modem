@@ -46,7 +46,23 @@
             <span>Max Speed (Instant Data)</span>
           </label>
         </div>
+
+        <!-- 🌟 NEW: Loop Repeater Placement Switch -->
+        <div class="loop-selector-wrapper">
+          <label class="loop-toggle-label">
+            <input 
+              type="checkbox" 
+              :checked="isLooping"
+              @change="$emit('update:isLooping', $event.target.checked)"
+            >
+            <span class="loop-text-label">Repeat Transmission Loop</span>
+          </label>
+        </div>
+
+
       </div>
+
+
 
       <!-- Telemetry Status Feed -->
       <div class="telemetry-readout">
@@ -127,6 +143,7 @@ defineProps({
   debugMetrics: Object,
   isLoopbackMode: Boolean,
   loopbackSpeed: String,
+  isLooping: Boolean,
   isTestingModeActive: Boolean,
   testMetrics: Object,
   currentTxIndex: Number // 🌟 Crucial: Must be camelCase in JavaScript definitions!
@@ -136,6 +153,7 @@ defineEmits([
   'toggle-engine', 
   'update:isLoopbackMode', 
   'update:loopbackSpeed', 
+  'update:isLooping',
   'run-test'
 ]);
 
@@ -464,5 +482,65 @@ const scrollToActiveLetter = (element) => {
   box-shadow: 0 0 10px #3b82f6;
   transform: scale(1.1);
   display: inline-block;
+}
+
+/* --------------------------------------------------------------------------------
+ * is looping control
+ * -------------------------------------------------------------------------------- */
+
+.loop-selector-wrapper {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #334155;
+}
+
+.loop-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.loop-text-label {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+/* Custom mini checkbox style adjustments for your repeat toggle */
+.loop-toggle-label input[type="checkbox"] {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: #0f172a;
+  border: 2px solid #475569;
+  border-radius: 3px;
+  cursor: pointer;
+  display: grid;
+  place-content: center;
+  margin: 0;
+  transition: all 0.1s ease;
+}
+
+.loop-toggle-label input[type="checkbox"]:checked {
+  background: #10b981; /* 🟢 Styled green to indicate active automation stream */
+  border-color: #10b981;
+}
+
+.loop-toggle-label input[type="checkbox"]::before {
+  content: "";
+  width: 6px;
+  height: 4px;
+  border-left: 2px solid white;
+  border-bottom: 2px solid white;
+  transform: rotate(-45deg) translate(0.5px, -0.5px);
+  scale: 0;
+}
+
+.loop-toggle-label input[type="checkbox"]:checked::before {
+  scale: 1;
 }
 </style>

@@ -32,6 +32,10 @@ const STANDARD_TEST_PAYLOAD = "MODEM_TEST_0123456789_ABCDEFGHIJKLMNOPQRSTUVWXYZ_
 
 const currentTxIndex = ref(-1); 
 
+const isLoopingActive = ref(false); // Tracks if the transmitter should auto-repeat
+const activeTxPayload = ref('');     // Caches the current text message for loop iterations
+
+
 const activeFields = computed(() => {
     const current = availableProtocols.value.find(p => p.id === selectedProtocol.value);
     return current ? current.fields : [];
@@ -122,7 +126,16 @@ const handleToggleEngine = async () => {
 };
 
 const handleProtocolChange = () => {
-    if (selectedProtocol.value) orchestrator.setProtocol(selectedProtocol.value, protocolConfigs.value[selectedProtocol.value]);
+    //if (selectedProtocol.value) orchestrator.setProtocol(selectedProtocol.value, protocolConfigs.value[selectedProtocol.value]);
+    if (selectedProtocol.value) {
+        // Shards the old protocol block and builds the new mathematical schema frame
+        orchestrator.setProtocol(selectedProtocol.value, protocolConfigs.value[selectedProtocol.value]);
+        
+        // 🌟 FIX: Force immediate cross-pollination of the active config right into the runtime engine
+        if (orchestrator.activeProtocol) {
+            orchestrator.activeProtocol.updateRuntimeParameters(protocolConfigs.value[selectedProtocol.value]);
+        }
+    }
 };
 
 //const handleOutputTransmission = (messageText) => {
@@ -143,19 +156,106 @@ const handleProtocolChange = () => {
 //        setTimeout(() => { if (isEngineActive.value) debugMetrics.value.mode = 'LISTENING / IDLE'; }, ((messageText.length * 10) / orchestrator.config.baud) * 1000 + 150);
 //    }
 //};
+
+//const handleOutputTransmission = (messageText) => {
+//    if (loopbackIntervalId) clearInterval(loopbackIntervalId);
+//    currentTxIndex.value = -1; // Reset to safe idle baseline
+//
+//    if (!isEngineActive.value && !isLoopbackMode.value) {
+//        alert("Please launch the modem hardware engine first.");
+//        return;
+//    }
+//
+//    if (isLoopbackMode.value) {
+//        debugMetrics.value.mode = 'TRANSMITTING';
+//        
+//        // 🌟 FIX: Wire up state setters into your utility parameter mapping
+//        loopbackIntervalId = runVirtualLoopback({
+//            messageText, 
+//            senderInstance, 
+//            receiverInstance, 
+//            orchestrator, 
+//            loopbackSpeed: loopbackSpeed.value, 
+//            sharedAnalyser: sharedAnalyser.value,
+//            onIndexChanged: (idx) => {
+//                currentTxIndex.value = idx; // ⚡ Pushes the index up to templates in real-time
+//            },
+//            onComplete: () => {
+//                debugMetrics.value.mode = 'LISTENING / IDLE';
+//                currentTxIndex.value = -1; // Clear highlight trails upon completion
+//                // 🌟 LOOP BACKCHECK: If checked, re-fire the loop after a tiny 50ms pause
+//                if (isLoopingActive.value) {
+//                    setTimeout(() => {
+//                        handleOutputTransmission(activeTxPayload.value);
+//                    }, 50);
+//                } else {
+//                    debugMetrics.value.mode = 'LISTENING / IDLE';
+//                }
+//
+//            }
+//        });
+//    } else {
+////        // --- PHYSICAL SPEAKER AIR-GAP MODE ---
+////        debugMetrics.value.mode = 'TRANSMITTING';
+////        senderInstance.transmitString(messageText, orchestrator.activeProtocol);
+////        
+////        // Simulates physical progression across speakers using an estimated interval clock
+////        currentTxIndex.value = 0;
+////        const charDurationMs = ((10 / orchestrator.config.baud) * 1000);
+////        
+////        let charTimer = setInterval(() => {
+////            if (currentTxIndex.value < messageText.length - 1) {
+////                currentTxIndex.value++;
+////            } else {
+////                clearInterval(charTimer);
+////            }
+////        }, charDurationMs);
+////
+////        setTimeout(() => {
+////            clearInterval(charTimer);
+////            currentTxIndex.value = -1; // Reset highlights
+////            if (isEngineActive.value) debugMetrics.value.mode = 'LISTENING / IDLE';
+////        }, ((messageText.length * 10) / orchestrator.config.baud) * 1000 + 150);
+//    // --- NORMAL PHYSICAL AUDIO MODE ---
+//    debugMetrics.value.mode = 'TRANSMITTING';
+//    
+//    // 🌟 FIX: Pass the full live orchestrator wrapper instead of just a single frozen instance
+//    senderInstance.transmitString(messageText, orchestrator);
+//
+//    const totalFramedBits = messageText.length * 10;
+//    const transmissionDurationMs = (totalFramedBits / orchestrator.config.baud) * 1000;
+//
+//    setTimeout(() => {
+//        if (isEngineActive.value) {
+//            debugMetrics.value.mode = 'LISTENING / IDLE';
+//        }
+//    }, transmissionDurationMs + 150);
+//    }
+//};
+// Inside src/views/home/index.vue <script setup>
+
 const handleOutputTransmission = (messageText) => {
-    if (loopbackIntervalId) clearInterval(loopbackIntervalId);
-    currentTxIndex.value = -1; // Reset to safe idle baseline
+    // 1. Clear any running simulation timers safely
+    if (loopbackIntervalId) {
+        clearInterval(loopbackIntervalId);
+        loopbackIntervalId = null;
+    }
+
+    // 2. Cache the message text so the repeater thread can reference it
+    activeTxPayload.value = messageText;
+    debugMetrics.value.mode = 'TRANSMITTING';
 
     if (!isEngineActive.value && !isLoopbackMode.value) {
         alert("Please launch the modem hardware engine first.");
         return;
     }
 
+    // ==========================================
+    // LAYER A: VIRTUAL LOOPBACK ROUTING STREAM
+    // ==========================================
     if (isLoopbackMode.value) {
-        debugMetrics.value.mode = 'TRANSMITTING';
+        const sampleRate = receiverInstance.audioContext?.sampleRate || 44100;
         
-        // 🌟 FIX: Wire up state setters into your utility parameter mapping
         loopbackIntervalId = runVirtualLoopback({
             messageText, 
             senderInstance, 
@@ -163,20 +263,30 @@ const handleOutputTransmission = (messageText) => {
             orchestrator, 
             loopbackSpeed: loopbackSpeed.value, 
             sharedAnalyser: sharedAnalyser.value,
-            onIndexChanged: (idx) => {
-                currentTxIndex.value = idx; // ⚡ Pushes the index up to templates in real-time
+            onIndexChanged: (idx) => { 
+                currentTxIndex.value = idx; 
             },
             onComplete: () => {
-                debugMetrics.value.mode = 'LISTENING / IDLE';
-                currentTxIndex.value = -1; // Clear highlight trails upon completion
+                currentTxIndex.value = -1;
+                
+                // 🌟 LOOP RE-TRIGGER: If checkbox is active, cycle the transmission payload again
+                if (isLoopingActive.value) {
+                    setTimeout(() => {
+                        // Pass activeTxPayload.value so it continues repeating seamlessly
+                        handleOutputTransmission(activeTxPayload.value);
+                    }, 50); // Tiny padding delay to give the hardware pipeline breathing room
+                } else {
+                    debugMetrics.value.mode = 'LISTENING / IDLE';
+                }
             }
         });
+
+    // ==========================================
+    // LAYER B: PHYSICAL HARDWARE SPEAKER STREAM
+    // ==========================================
     } else {
-        // --- PHYSICAL SPEAKER AIR-GAP MODE ---
-        debugMetrics.value.mode = 'TRANSMITTING';
-        senderInstance.transmitString(messageText, orchestrator.activeProtocol);
+        senderInstance.transmitString(messageText, orchestrator);
         
-        // Simulates physical progression across speakers using an estimated interval clock
         currentTxIndex.value = 0;
         const charDurationMs = ((10 / orchestrator.config.baud) * 1000);
         
@@ -188,13 +298,25 @@ const handleOutputTransmission = (messageText) => {
             }
         }, charDurationMs);
 
+        const totalFramedBits = messageText.length * 10;
+        const transmissionDurationMs = (totalFramedBits / orchestrator.config.baud) * 1000;
+
         setTimeout(() => {
             clearInterval(charTimer);
-            currentTxIndex.value = -1; // Reset highlights
-            if (isEngineActive.value) debugMetrics.value.mode = 'LISTENING / IDLE';
-        }, ((messageText.length * 10) / orchestrator.config.baud) * 1000 + 150);
+            currentTxIndex.value = -1;
+            
+            // 🌟 LOOP RE-TRIGGER: If checkbox is active, cycle the physical audio transmission
+            if (isLoopingActive.value && isEngineActive.value) {
+                handleOutputTransmission(activeTxPayload.value);
+            } else {
+                if (isEngineActive.value) {
+                    debugMetrics.value.mode = 'LISTENING / IDLE';
+                }
+            }
+        }, transmissionDurationMs + 150); // Safeguard timeout window to allow completion of the final stop bit
     }
 };
+
 
 
 const runAutomatedValidationTest = () => {
@@ -225,6 +347,7 @@ const runAutomatedValidationTest = () => {
           :debug-metrics="debugMetrics"
           v-model:is-loopback-mode="isLoopbackMode"
           v-model:loopback-speed="loopbackSpeed"
+          v-model:is-looping="isLoopingActive"
           :is-testing-mode-active="isTestingModeActive"
           :test-metrics="testMetrics"
           @toggle-engine="handleToggleEngine"
@@ -236,7 +359,6 @@ const runAutomatedValidationTest = () => {
           v-model:selected-protocol="selectedProtocol"
           v-model:protocol-config="protocolConfigs[selectedProtocol]"
           :active-fields="activeFields"
-          :is-transmitting="senderInstance?.isRunning"
           @change-protocol="handleProtocolChange"
         />
       </div>

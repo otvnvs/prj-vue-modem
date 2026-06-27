@@ -9,7 +9,6 @@
         <select 
           :value="selectedProtocol" 
           @change="onProtocolDropdownChange"
-          :disabled="isTransmitting"
         >
           <option 
             v-for="proto in availableProtocols" 
