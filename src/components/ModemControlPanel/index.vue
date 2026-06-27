@@ -81,21 +81,26 @@
           <span class="status-badge-text">{{ testMetrics.testStatus }}</span>
         </div>
         
-        <div class="results-layout-block">
           <div class="result-field">
             <span class="label">Expected Payload:</span>
-            <div class="payload-display-wrapper expected">
-              {{ testMetrics.expectedText }}
+            <div 
+              ref="expectedRef"
+              class="payload-display-wrapper expected letters-grid"
+              @scroll="syncScroll($event, 'received')"
+            >
+              <!-- 🌟 Updated class checks to handle cumulative history states -->
+              <span 
+                v-for="(char, idx) in testMetrics.expectedText" 
+                :key="idx"
+                :class="{ 
+                  'sent-history': idx < currentTxIndex,
+                  'active-now': idx === currentTxIndex 
+                }"
+                :ref="el => { if (idx === currentTxIndex) scrollToActiveLetter(el); }"
+              >{{ char }}</span>
             </div>
           </div>
-          
-          <div class="result-field">
-            <span class="label">Received Payload:</span>
-            <div class="payload-display-wrapper received" :class="{ empty: !testMetrics.receivedText }">
-              {{ testMetrics.receivedText || '(Awaiting incoming characters...)' }}
-            </div>
-          </div>
-        </div>
+
 
         <div class="metrics-summary-row">
           <div class="metric-pill" :class="{ error: testMetrics.bitErrors > 0 }">
@@ -114,6 +119,8 @@
 </template>
 
 <script setup>
+import { ref } from 'vue';
+
 defineProps({
   isEngineActive: Boolean,
   engineState: String,
@@ -121,7 +128,8 @@ defineProps({
   isLoopbackMode: Boolean,
   loopbackSpeed: String,
   isTestingModeActive: Boolean,
-  testMetrics: Object
+  testMetrics: Object,
+  currentTxIndex: Number // 🌟 Crucial: Must be camelCase in JavaScript definitions!
 });
 
 defineEmits([
@@ -130,6 +138,41 @@ defineEmits([
   'update:loopbackSpeed', 
   'run-test'
 ]);
+
+// Template DOM element tracking references
+const expectedRef = ref(null);
+const receivedRef = ref(null);
+let isSyncing = false;
+
+// Coupled scroll locking interpreter
+const syncScroll = (event, targetNodeName) => {
+  if (isSyncing) return;
+  isSyncing = true;
+  
+  const currentScrollTop = event.target.scrollTop;
+
+  if (targetNodeName === 'received' && receivedRef.value) {
+    receivedRef.value.scrollTop = currentScrollTop;
+  } else if (targetNodeName === 'expected' && expectedRef.value) {
+    expectedRef.value.scrollTop = currentScrollTop;
+  }
+
+  requestAnimationFrame(() => {
+    isSyncing = false;
+  });
+};
+
+// 🌟 NEW: Center-scrolling engine for progressive text highlights
+const scrollToActiveLetter = (element) => {
+  if (element && expectedRef.value) {
+    const container = expectedRef.value;
+    const elementTop = element.offsetTop;
+    const containerHeight = container.clientHeight;
+    
+    // Smoothly pushes the container viewport to focus perfectly on the active blue cursor line
+    container.scrollTop = elementTop - (containerHeight / 2);
+  }
+};
 </script>
 
 <style scoped>
@@ -394,4 +437,32 @@ defineEmits([
 
 .payload-display-wrapper::-webkit-scrollbar { width: 4px; }
 .payload-display-wrapper::-webkit-scrollbar-track { background: transparent; }
-.payload-display-wrapper::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 2px; }.metrics-summary-row {display: grid;grid-template-columns: 1fr 1fr;gap: 8px;margin-top: 12px;}.metric-pill {display: flex;flex-direction: column;align-items: center;justify-content: center;background: #111827;border: 1px solid #1e293b;border-radius: 6px;padding: 6px;}.pill-label { font-size: 0.6rem; color: #475569; text-transform: uppercase; font-weight: bold; }.pill-val { font-size: 0.9rem; font-weight: bold; color: #f1f5f9; }.metric-pill.error { border-color: #7f1d1d; background: #270505; }.metric-pill.error .pill-val { color: #fca5a5; }.metric-pill.success { border-color: #064e3b; background: #022c22; }.metric-pill.success .pill-val { color: #34d399; }</style>
+.payload-display-wrapper::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 2px; }.metrics-summary-row {display: grid;grid-template-columns: 1fr 1fr;gap: 8px;margin-top: 12px;}.metric-pill {display: flex;flex-direction: column;align-items: center;justify-content: center;background: #111827;border: 1px solid #1e293b;border-radius: 6px;padding: 6px;}.pill-label { font-size: 0.6rem; color: #475569; text-transform: uppercase; font-weight: bold; }.pill-val { font-size: 0.9rem; font-weight: bold; color: #f1f5f9; }.metric-pill.error { border-color: #7f1d1d; background: #270505; }.metric-pill.error .pill-val { color: #fca5a5; }.metric-pill.success { border-color: #064e3b; background: #022c22; }.metric-pill.success .pill-val { color: #34d399; }
+
+
+/* Letter grid container setup */
+.letters-grid {
+  display: inline-block;
+}
+.letters-grid span {
+  transition: background 0.1s ease, color 0.15s ease;
+  border-radius: 2px;
+  padding: 0 0.5px;
+}
+
+/* 📥 1. HISTORICALLY SENT LETTERS: Clean, bright white data trail */
+.letters-grid span.sent-history {
+  color: #f1f5f9 !important; /* Forces soft gray reference text to snap to bright white */
+  background: rgba(51, 65, 85, 0.4); /* Subtle backing track to show transmission progress */
+}
+
+/* ⚡ 2. ACTIVE TRANSMITTING LETTER: Neon blue glow tip */
+.letters-grid span.active-now {
+  background: #3b82f6;
+  color: #ffffff !important;
+  font-weight: bold;
+  box-shadow: 0 0 10px #3b82f6;
+  transform: scale(1.1);
+  display: inline-block;
+}
+</style>

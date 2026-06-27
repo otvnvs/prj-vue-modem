@@ -9,6 +9,7 @@ export function runVirtualLoopback({
     loopbackSpeed,
     sharedAnalyser,
     onChunkProcessed,
+    onIndexChanged,
     onComplete
 }) {
     const sampleRate = receiverInstance.audioContext?.sampleRate || 44100;
@@ -19,6 +20,9 @@ export function runVirtualLoopback({
     );
 
     const chunkSize = 512;
+    const baudRate = orchestrator.config.baud || 300;
+    const samplesPerCharacter = (sampleRate / baudRate) * 10; // 10 bits per UART frame
+
 
     if (loopbackSpeed === 'instant') {
         for (let i = 0; i < virtualAudioSamples.length; i += chunkSize) {
@@ -32,6 +36,7 @@ export function runVirtualLoopback({
     if (loopbackSpeed === 'realtime') {
         let currentSampleOffset = 0;
         const tickRateMs = (chunkSize / sampleRate) * 1000;
+        let lastCharIdx = -1;
 
         const intervalId = setInterval(() => {
             if (currentSampleOffset >= virtualAudioSamples.length) {
@@ -39,6 +44,18 @@ export function runVirtualLoopback({
                 onComplete();
                 return;
             }
+
+            // 🌟 STEP 1: Calculate exactly which character index matches this chunk offset
+            const currentCharIdx = Math.floor(currentSampleOffset / samplesPerCharacter);
+            
+            // 🌟 STEP 2: If the index moves forward, push the new value up to Vue instantly
+            if (currentCharIdx !== lastCharIdx && currentCharIdx < messageText.length) {
+                lastCharIdx = currentCharIdx;
+                if (onIndexChanged) {
+                    onIndexChanged(currentCharIdx);
+                }
+            }
+
 
             const chunk = virtualAudioSamples.slice(currentSampleOffset, currentSampleOffset + chunkSize);
             const ctx = receiverInstance.audioContext;

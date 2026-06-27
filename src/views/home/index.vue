@@ -30,6 +30,8 @@ const isTestingModeActive = ref(false);
 const testMetrics = ref({ expectedText: '', receivedText: '', charAccuracy: 100, bitErrors: 0, testStatus: 'IDLE' });
 const STANDARD_TEST_PAYLOAD = "MODEM_TEST_0123456789_ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz_++--";
 
+const currentTxIndex = ref(-1); 
+
 const activeFields = computed(() => {
     const current = availableProtocols.value.find(p => p.id === selectedProtocol.value);
     return current ? current.fields : [];
@@ -37,18 +39,53 @@ const activeFields = computed(() => {
 
 const engineState = computed(() => !isEngineActive.value ? 'OFFLINE' : debugMetrics.value.mode);
 
+//onMounted(() => {
+//    availableProtocols.value = orchestrator.getAvailableProtocols();
+//    if (availableProtocols.value.length > 0) {
+//        selectedProtocol.value = availableProtocols.value[0].id;
+//        availableProtocols.value.forEach(proto => protocolConfigs.value[proto.id] = proto.defaultConfig);
+//        orchestrator.setProtocol(selectedProtocol.value, protocolConfigs.value[selectedProtocol.value]);
+//    }
+//    orchestrator.onDebug(metrics => {
+//        debugMetrics.value.lockFreq = metrics.freqLock;
+//        debugMetrics.value.snr = metrics.signalQuality;
+//        if (debugMetrics.value.mode !== 'TRANSMITTING') debugMetrics.value.mode = metrics.mode;
+//    });
+//    orchestrator.onData(character => {
+//        rxStreamBuffer.value += character;
+//        if (isTestingModeActive.value) {
+//            testMetrics.value.receivedText += character;
+//            const res = calculateValidationResults(testMetrics.value.expectedText, testMetrics.value.receivedText);
+//            testMetrics.value.charAccuracy = res.charAccuracy;
+//            testMetrics.value.bitErrors = res.bitErrors;
+//        }
+//    });
+//});
 onMounted(() => {
+    // Collect the global registered protocols array
     availableProtocols.value = orchestrator.getAvailableProtocols();
+    
     if (availableProtocols.value.length > 0) {
+        // 🌟 FIX: Access index 0 to cleanly read the string ID mapping property!
         selectedProtocol.value = availableProtocols.value[0].id;
-        availableProtocols.value.forEach(proto => protocolConfigs.value[proto.id] = proto.defaultConfig);
+        
+        // Securely initialize default keys for each architecture setup
+        availableProtocols.value.forEach(proto => {
+            protocolConfigs.value[proto.id] = proto.defaultConfig;
+        });
+        
+        // Instantiate the background engine driver protocol model
         orchestrator.setProtocol(selectedProtocol.value, protocolConfigs.value[selectedProtocol.value]);
     }
+    
+    // Capture incoming bit telemetry
     orchestrator.onDebug(metrics => {
         debugMetrics.value.lockFreq = metrics.freqLock;
         debugMetrics.value.snr = metrics.signalQuality;
         if (debugMetrics.value.mode !== 'TRANSMITTING') debugMetrics.value.mode = metrics.mode;
     });
+    
+    // Capture incoming string text streams
     orchestrator.onData(character => {
         rxStreamBuffer.value += character;
         if (isTestingModeActive.value) {
@@ -88,24 +125,77 @@ const handleProtocolChange = () => {
     if (selectedProtocol.value) orchestrator.setProtocol(selectedProtocol.value, protocolConfigs.value[selectedProtocol.value]);
 };
 
+//const handleOutputTransmission = (messageText) => {
+//    if (loopbackIntervalId) clearInterval(loopbackIntervalId);
+//    if (!isEngineActive.value && !isLoopbackMode.value) {
+//        alert("Please launch the modem hardware engine first.");
+//        return;
+//    }
+//    if (isLoopbackMode.value) {
+//        debugMetrics.value.mode = 'TRANSMITTING';
+//        loopbackIntervalId = runVirtualLoopback({
+//            messageText, senderInstance, receiverInstance, orchestrator, loopbackSpeed: loopbackSpeed.value, sharedAnalyser: sharedAnalyser.value,
+//            onComplete: () => debugMetrics.value.mode = 'LISTENING / IDLE'
+//        });
+//    } else {
+//        debugMetrics.value.mode = 'TRANSMITTING';
+//        senderInstance.transmitString(messageText, orchestrator.activeProtocol);
+//        setTimeout(() => { if (isEngineActive.value) debugMetrics.value.mode = 'LISTENING / IDLE'; }, ((messageText.length * 10) / orchestrator.config.baud) * 1000 + 150);
+//    }
+//};
 const handleOutputTransmission = (messageText) => {
     if (loopbackIntervalId) clearInterval(loopbackIntervalId);
+    currentTxIndex.value = -1; // Reset to safe idle baseline
+
     if (!isEngineActive.value && !isLoopbackMode.value) {
         alert("Please launch the modem hardware engine first.");
         return;
     }
+
     if (isLoopbackMode.value) {
         debugMetrics.value.mode = 'TRANSMITTING';
+        
+        // 🌟 FIX: Wire up state setters into your utility parameter mapping
         loopbackIntervalId = runVirtualLoopback({
-            messageText, senderInstance, receiverInstance, orchestrator, loopbackSpeed: loopbackSpeed.value, sharedAnalyser: sharedAnalyser.value,
-            onComplete: () => debugMetrics.value.mode = 'LISTENING / IDLE'
+            messageText, 
+            senderInstance, 
+            receiverInstance, 
+            orchestrator, 
+            loopbackSpeed: loopbackSpeed.value, 
+            sharedAnalyser: sharedAnalyser.value,
+            onIndexChanged: (idx) => {
+                currentTxIndex.value = idx; // ⚡ Pushes the index up to templates in real-time
+            },
+            onComplete: () => {
+                debugMetrics.value.mode = 'LISTENING / IDLE';
+                currentTxIndex.value = -1; // Clear highlight trails upon completion
+            }
         });
     } else {
+        // --- PHYSICAL SPEAKER AIR-GAP MODE ---
         debugMetrics.value.mode = 'TRANSMITTING';
         senderInstance.transmitString(messageText, orchestrator.activeProtocol);
-        setTimeout(() => { if (isEngineActive.value) debugMetrics.value.mode = 'LISTENING / IDLE'; }, ((messageText.length * 10) / orchestrator.config.baud) * 1000 + 150);
+        
+        // Simulates physical progression across speakers using an estimated interval clock
+        currentTxIndex.value = 0;
+        const charDurationMs = ((10 / orchestrator.config.baud) * 1000);
+        
+        let charTimer = setInterval(() => {
+            if (currentTxIndex.value < messageText.length - 1) {
+                currentTxIndex.value++;
+            } else {
+                clearInterval(charTimer);
+            }
+        }, charDurationMs);
+
+        setTimeout(() => {
+            clearInterval(charTimer);
+            currentTxIndex.value = -1; // Reset highlights
+            if (isEngineActive.value) debugMetrics.value.mode = 'LISTENING / IDLE';
+        }, ((messageText.length * 10) / orchestrator.config.baud) * 1000 + 150);
     }
 };
+
 
 const runAutomatedValidationTest = () => {
     rxStreamBuffer.value = '';
@@ -139,6 +229,7 @@ const runAutomatedValidationTest = () => {
           :test-metrics="testMetrics"
           @toggle-engine="handleToggleEngine"
           @run-test="runAutomatedValidationTest"
+          :current-tx-index="currentTxIndex"
         />
         <ProtocolProfilePanel
           :available-protocols="availableProtocols"
