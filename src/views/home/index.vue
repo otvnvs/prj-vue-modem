@@ -105,25 +105,59 @@ watch(() => protocolConfigs.value[selectedProtocol.value], newSettings => {
     if (newSettings) orchestrator.updateConfig(newSettings);
 }, { deep: true });
 
+//const handleToggleEngine = async () => {
+//    if (!isEngineActive.value) {
+//        try {
+//            sharedAnalyser.value = await receiverInstance.start(chunk => {
+//                if (!isLoopbackMode.value) orchestrator.ingestIncomingAudioSamples(chunk, receiverInstance.audioContext.sampleRate);
+//            });
+//            senderInstance.init(receiverInstance.audioContext);
+//            isEngineActive.value = true;
+//            debugMetrics.value.mode = 'LISTENING / IDLE';
+//        } catch (err) {
+//            alert("Microphone hardware permission blocked.");
+//        }
+//    } else {
+//        if (loopbackIntervalId) clearInterval(loopbackIntervalId);
+//        receiverInstance.stop(); senderInstance.stopTone(); sharedAnalyser.value = null;
+//        isEngineActive.value = false; rxStreamBuffer.value = '';
+//        debugMetrics.value = { mode: 'OFFLINE', lockFreq: 0, snr: 0 };
+//    }
+//};
+// Inside src/views/home/index.vue <script setup>
+
 const handleToggleEngine = async () => {
     if (!isEngineActive.value) {
         try {
-            sharedAnalyser.value = await receiverInstance.start(chunk => {
-                if (!isLoopbackMode.value) orchestrator.ingestIncomingAudioSamples(chunk, receiverInstance.audioContext.sampleRate);
+            // 1. Fire up hardware permissions and compile worklet codes
+            const activeAnalyser = await receiverInstance.start((audioSamplesChunk) => {
+                if (!isLoopbackMode.value) {
+                    orchestrator.ingestIncomingAudioSamples(audioSamplesChunk, receiverInstance.audioContext.sampleRate);
+                }
             });
-            senderInstance.init(receiverInstance.audioContext);
+
+            sharedAnalyser.value = activeAnalyser;
+
+            // 🌟 FIX: Wait for worklet module initialization before instantiating the sender node
+            await senderInstance.init(receiverInstance.audioContext);
+
             isEngineActive.value = true;
             debugMetrics.value.mode = 'LISTENING / IDLE';
         } catch (err) {
-            alert("Microphone hardware permission blocked.");
+            console.error("Audio Engine launch script blocked:", err);
+            alert("Microphone hardware connection blocked. Check browser peripheral permissions.");
         }
     } else {
         if (loopbackIntervalId) clearInterval(loopbackIntervalId);
-        receiverInstance.stop(); senderInstance.stopTone(); sharedAnalyser.value = null;
-        isEngineActive.value = false; rxStreamBuffer.value = '';
+        receiverInstance.stop();
+        senderInstance.stopTone();
+        sharedAnalyser.value = null;
+        isEngineActive.value = false;
+        rxStreamBuffer.value = '';
         debugMetrics.value = { mode: 'OFFLINE', lockFreq: 0, snr: 0 };
     }
 };
+
 
 const handleProtocolChange = () => {
     //if (selectedProtocol.value) orchestrator.setProtocol(selectedProtocol.value, protocolConfigs.value[selectedProtocol.value]);
@@ -234,8 +268,90 @@ const handleProtocolChange = () => {
 //};
 // Inside src/views/home/index.vue <script setup>
 
+//const handleOutputTransmission = (messageText) => {
+//    // 1. Clear any running simulation timers safely
+//    if (loopbackIntervalId) {
+//        clearInterval(loopbackIntervalId);
+//        loopbackIntervalId = null;
+//    }
+//
+//    // 2. Cache the message text so the repeater thread can reference it
+//    activeTxPayload.value = messageText;
+//    debugMetrics.value.mode = 'TRANSMITTING';
+//
+//    if (!isEngineActive.value && !isLoopbackMode.value) {
+//        alert("Please launch the modem hardware engine first.");
+//        return;
+//    }
+//
+//    // ==========================================
+//    // LAYER A: VIRTUAL LOOPBACK ROUTING STREAM
+//    // ==========================================
+//    if (isLoopbackMode.value) {
+//        const sampleRate = receiverInstance.audioContext?.sampleRate || 44100;
+//        
+//        loopbackIntervalId = runVirtualLoopback({
+//            messageText, 
+//            senderInstance, 
+//            receiverInstance, 
+//            orchestrator, 
+//            loopbackSpeed: loopbackSpeed.value, 
+//            sharedAnalyser: sharedAnalyser.value,
+//            onIndexChanged: (idx) => { 
+//                currentTxIndex.value = idx; 
+//            },
+//            onComplete: () => {
+//                currentTxIndex.value = -1;
+//                
+//                // 🌟 LOOP RE-TRIGGER: If checkbox is active, cycle the transmission payload again
+//                if (isLoopingActive.value) {
+//                    setTimeout(() => {
+//                        // Pass activeTxPayload.value so it continues repeating seamlessly
+//                        handleOutputTransmission(activeTxPayload.value);
+//                    }, 50); // Tiny padding delay to give the hardware pipeline breathing room
+//                } else {
+//                    debugMetrics.value.mode = 'LISTENING / IDLE';
+//                }
+//            }
+//        });
+//
+//    // ==========================================
+//    // LAYER B: PHYSICAL HARDWARE SPEAKER STREAM
+//    // ==========================================
+//    } else {
+//        senderInstance.transmitString(messageText, orchestrator);
+//        
+//        currentTxIndex.value = 0;
+//        const charDurationMs = ((10 / orchestrator.config.baud) * 1000);
+//        
+//        let charTimer = setInterval(() => {
+//            if (currentTxIndex.value < messageText.length - 1) {
+//                currentTxIndex.value++;
+//            } else {
+//                clearInterval(charTimer);
+//            }
+//        }, charDurationMs);
+//
+//        const totalFramedBits = messageText.length * 10;
+//        const transmissionDurationMs = (totalFramedBits / orchestrator.config.baud) * 1000;
+//
+//        setTimeout(() => {
+//            clearInterval(charTimer);
+//            currentTxIndex.value = -1;
+//            
+//            // 🌟 LOOP RE-TRIGGER: If checkbox is active, cycle the physical audio transmission
+//            if (isLoopingActive.value && isEngineActive.value) {
+//                handleOutputTransmission(activeTxPayload.value);
+//            } else {
+//                if (isEngineActive.value) {
+//                    debugMetrics.value.mode = 'LISTENING / IDLE';
+//                }
+//            }
+//        }, transmissionDurationMs + 150); // Safeguard timeout window to allow completion of the final stop bit
+//    }
+//};
 const handleOutputTransmission = (messageText) => {
-    // 1. Clear any running simulation timers safely
+    // 1. Clear any running virtual simulation timers safely
     if (loopbackIntervalId) {
         clearInterval(loopbackIntervalId);
         loopbackIntervalId = null;
@@ -244,15 +360,16 @@ const handleOutputTransmission = (messageText) => {
     // 2. Cache the message text so the repeater thread can reference it
     activeTxPayload.value = messageText;
     debugMetrics.value.mode = 'TRANSMITTING';
+    currentTxIndex.value = -1; // Reset highlights baseline tracking
 
     if (!isEngineActive.value && !isLoopbackMode.value) {
-        alert("Please launch the modem hardware engine first.");
+        alert("Please launch the modem hardware engine before initiating audio transmission.");
         return;
     }
 
-    // ==========================================
-    // LAYER A: VIRTUAL LOOPBACK ROUTING STREAM
-    // ==========================================
+    // ========================================================
+    // PATH LAYER A: VIRTUAL MEMORY-LOOPBACK SIMULATION STREAM
+    // ========================================================
     if (isLoopbackMode.value) {
         const sampleRate = receiverInstance.audioContext?.sampleRate || 44100;
         
@@ -264,48 +381,42 @@ const handleOutputTransmission = (messageText) => {
             loopbackSpeed: loopbackSpeed.value, 
             sharedAnalyser: sharedAnalyser.value,
             onIndexChanged: (idx) => { 
+                // Push real-time incremental indices straight up into template views
                 currentTxIndex.value = idx; 
             },
             onComplete: () => {
                 currentTxIndex.value = -1;
                 
-                // 🌟 LOOP RE-TRIGGER: If checkbox is active, cycle the transmission payload again
+                // LOOP RE-TRIGGER: If checkbox is active, cycle the simulation payload again
                 if (isLoopingActive.value) {
                     setTimeout(() => {
-                        // Pass activeTxPayload.value so it continues repeating seamlessly
                         handleOutputTransmission(activeTxPayload.value);
-                    }, 50); // Tiny padding delay to give the hardware pipeline breathing room
+                    }, 50); // Small delay padding to prevent main thread memory locks
                 } else {
                     debugMetrics.value.mode = 'LISTENING / IDLE';
                 }
             }
         });
 
-    // ==========================================
-    // LAYER B: PHYSICAL HARDWARE SPEAKER STREAM
-    // ==========================================
+    // ========================================================
+    // PATH LAYER B: PHYSICAL SOUNDCARD AUDIO CONSUMER STREAM
+    // ========================================================
     } else {
-        senderInstance.transmitString(messageText, orchestrator);
-        
-        currentTxIndex.value = 0;
-        const charDurationMs = ((10 / orchestrator.config.baud) * 1000);
-        
-        let charTimer = setInterval(() => {
-            if (currentTxIndex.value < messageText.length - 1) {
-                currentTxIndex.value++;
-            } else {
-                clearInterval(charTimer);
-            }
-        }, charDurationMs);
+        // Trigger the hardware-clocked worklet engine to consume bits
+        senderInstance.transmitString(messageText, orchestrator, (hardwareIndex) => {
+            // This callback fires straight from the AudioWorklet thread via messages
+            currentTxIndex.value = hardwareIndex; // Lock highlights perfectly to sample boundaries!
+        });
 
+        // Calculate maximum safe timeout window to switch states back when done
         const totalFramedBits = messageText.length * 10;
-        const transmissionDurationMs = (totalFramedBits / orchestrator.config.baud) * 1000;
+        const liveBaudRate = orchestrator.activeProtocol?.config?.baud || 300;
+        const transmissionDurationMs = (totalFramedBits / liveBaudRate) * 1000;
 
         setTimeout(() => {
-            clearInterval(charTimer);
-            currentTxIndex.value = -1;
+            currentTxIndex.value = -1; // Wipe the highlight selection trail clean
             
-            // 🌟 LOOP RE-TRIGGER: If checkbox is active, cycle the physical audio transmission
+            // LOOP RE-TRIGGER: If checkbox is active, cycle physical speaker audio
             if (isLoopingActive.value && isEngineActive.value) {
                 handleOutputTransmission(activeTxPayload.value);
             } else {
@@ -313,9 +424,10 @@ const handleOutputTransmission = (messageText) => {
                     debugMetrics.value.mode = 'LISTENING / IDLE';
                 }
             }
-        }, transmissionDurationMs + 150); // Safeguard timeout window to allow completion of the final stop bit
+        }, transmissionDurationMs + 150); // Padding window allows the final UART stop bit to play completely
     }
 };
+
 
 
 
@@ -366,7 +478,7 @@ const runAutomatedValidationTest = () => {
         <section class="card graphics-panel">
           <AudioOscilloscope :analyserNode="sharedAnalyser" />
         </section>
-        <TerminalWorkspace :rx-stream-data="rxStreamBuffer" @send-message="handleOutputTransmission" />
+        <TerminalWorkspace :rx-stream-data="rxStreamBuffer" @send-message="handleOutputTransmission" :current-tx-index="currentTxIndex" />
       </div>
     </main>
   </div>
